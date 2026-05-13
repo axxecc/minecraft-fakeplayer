@@ -8,12 +8,14 @@ import io.github.hello09x.fakeplayer.api.spi.ActionTicker;
 import io.github.hello09x.fakeplayer.api.spi.ActionType;
 import io.github.hello09x.fakeplayer.api.spi.NMSBridge;
 import io.github.hello09x.fakeplayer.core.Main;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -30,7 +32,6 @@ public class ActionManager {
     @Inject
     public ActionManager(NMSBridge bridge) {
         this.bridge = bridge;
-        Bukkit.getScheduler().runTaskTimer(Main.getInstance(), this::tick, 0, 1);
     }
 
     public boolean hasActiveAction(
@@ -38,9 +39,9 @@ public class ActionManager {
             @NotNull ActionType action
     ) {
         return Optional.ofNullable(this.managers.get(player.getUniqueId()))
-                       .map(manager -> manager.get(action))
-                       .filter(ac -> ac.getSetting().remains > 0)
-                       .isPresent();
+                .map(manager -> manager.get(action))
+                .filter(ac -> ac.getSetting().remains > 0)
+                .isPresent();
     }
 
     public @NotNull @Unmodifiable Set<ActionType> getActiveActions(@NotNull Player player) {
@@ -50,10 +51,13 @@ public class ActionManager {
         }
 
         return manager.entrySet()
-                      .stream()
-                      .filter(actions -> actions.getValue().getSetting().remains > 0)
-                      .map(Map.Entry::getKey)
-                      .collect(Collectors.toSet());
+                .stream()
+                .filter(action -> {
+                    int remains = action.getValue().getSetting().remains;
+                    return remains > 0 || remains == -1;
+                })
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
     }
 
     public void setAction(
@@ -78,34 +82,31 @@ public class ActionManager {
         }
     }
 
-    public void tick() {
-        var itr = managers.entrySet().iterator();
-        while (itr.hasNext()) {
-            var entry = itr.next();
-            var player = Bukkit.getPlayer(entry.getKey());
+    public void tick(Player player) {
 
-            if (player == null || !player.isValid()) {
-                // 假人下线或者死亡
-                itr.remove();
-                for (var ticker : entry.getValue().values()) {
-                    ticker.stop();
-                }
-                continue;
-            }
+        Map<ActionType, ActionTicker> actionTypeActionTickerMap = managers.get(player.getUniqueId());
+        if (player == null || !player.isOnline()) return;
 
-            // do tick
-            entry.getValue().values().removeIf(ticker -> {
-                try {
-                    return ticker.tick();
-                } catch (Throwable e) {
-                    log.warning(Throwables.getStackTraceAsString(e));
-                    return false;
-                }
-            });
-            if (entry.getValue().isEmpty()) {
-                itr.remove();
-            }
+        if (!player.isValid()) {
+            managers.remove(player.getUniqueId());
+            actionTypeActionTickerMap.values().forEach(ActionTicker::stop);
+            return;
         }
+
+        if (actionTypeActionTickerMap == null || actionTypeActionTickerMap.isEmpty()) return;
+        actionTypeActionTickerMap.values().removeIf(ticker -> {
+            try {
+                return ticker.tick();
+            } catch (Throwable e) {
+                log.warning(Throwables.getStackTraceAsString(e));
+                return false;
+            }
+        });
+
+        if (actionTypeActionTickerMap.isEmpty()) {
+            managers.remove(player.getUniqueId());
+        }
+
     }
 
 }

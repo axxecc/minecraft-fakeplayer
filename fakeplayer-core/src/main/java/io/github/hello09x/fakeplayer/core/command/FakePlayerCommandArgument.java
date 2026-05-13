@@ -12,9 +12,7 @@ import dev.jorel.commandapi.executors.CommandArguments;
 import dev.jorel.commandapi.wrappers.CommandResult;
 import io.github.hello09x.fakeplayer.core.Main;
 import io.github.hello09x.fakeplayer.core.manager.FakeplayerManager;
-import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
-import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
@@ -35,40 +33,42 @@ public class FakePlayerCommandArgument extends Argument<CommandResult> implement
      * @param nodeName the name of the node for this argument
      */
     public FakePlayerCommandArgument(String nodeName) {
-        super(nodeName, StringArgumentType.greedyString());
+        super(nodeName, StringArgumentType::greedyString);
         applySuggestions();
     }
 
     private void applySuggestions() {
         super.replaceSuggestions((info, builder) -> {
-            // Extract information
             var sender = this.getTarget(info);
             if (sender == null) {
                 return Suggestions.empty();
             }
-            var commandMap = CommandAPIBukkit.get().getNMS().getSimpleCommandMap();
-            var command = info.currentArg();
 
-            // Setup context for errors
+            var commandMap = CommandAPIBukkit.get().getCommandMap();
+            var command = info.currentArg();
             var context = new StringReader(command);
 
             if (!command.contains(" ")) {
-                // Suggesting command name
+                // Suggest command name
                 ArgumentSuggestions<CommandSender> replacement = replacements.getNextSuggestion(sender);
                 if (replacement != null) {
-                    return replacement.suggest(new SuggestionInfo<>(sender, new CommandArguments(new Object[0], new LinkedHashMap<>(), new String[0], new LinkedHashMap<>(), info.currentInput()), command, command), builder);
+                    return replacement.suggest(new SuggestionInfo<>(
+                            sender,
+                            new CommandArguments(new Object[0], new LinkedHashMap<>(), new String[0], new LinkedHashMap<>(), info.currentInput()),
+                            command,
+                            command
+                    ), builder);
                 }
 
                 var results = commandMap.tabComplete(sender, command);
-                // No applicable commands
                 if (results == null) {
                     throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().createWithContext(context);
                 }
 
-                // Remove / that gets prefixed to command name if the sender is a player
                 if (sender instanceof Player) {
                     for (String result : results) {
-                        builder.suggest(result.substring(1));
+                        // Player tabComplete adds "/" prefix, strip it
+                        builder.suggest(result.startsWith("/") ? result.substring(1) : result);
                     }
                 } else {
                     for (String result : results) {
@@ -79,53 +79,50 @@ public class FakePlayerCommandArgument extends Argument<CommandResult> implement
                 return builder.buildFuture();
             }
 
-
-            // Verify commandLabel
+            // Extract command label
             var commandLabel = command.substring(0, command.indexOf(" "));
             var target = commandMap.getCommand(commandLabel);
             if (target == null) {
                 throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownCommand().createWithContext(context);
             }
 
-            // Get arguments
+            // Split args
             var arguments = command.split(" ");
             if (!arguments[0].isEmpty() && command.endsWith(" ")) {
-                // If command ends with space add an empty argument
                 arguments = Arrays.copyOf(arguments, arguments.length + 1);
                 arguments[arguments.length - 1] = "";
             }
 
-            // Build suggestion
             builder = builder.createOffset(builder.getStart() + command.lastIndexOf(" ") + 1);
 
             int lastIndex = arguments.length - 1;
             var previousArguments = Arrays.copyOf(arguments, lastIndex);
+
             ArgumentSuggestions<CommandSender> replacement = replacements.getNextSuggestion(sender, previousArguments);
             if (replacement != null) {
-                return replacement.suggest(new SuggestionInfo<>(sender, new CommandArguments(previousArguments, new LinkedHashMap<>(), previousArguments, new LinkedHashMap<>(), info.currentInput()), command, arguments[lastIndex]), builder);
+                return replacement.suggest(new SuggestionInfo<>(
+                        sender,
+                        new CommandArguments(previousArguments, new LinkedHashMap<>(), previousArguments, new LinkedHashMap<>(), info.currentInput()),
+                        command,
+                        arguments[lastIndex]
+                ), builder);
             }
 
-            // Remove command name from arguments for normal tab-completion
+            // Remove command name for normal tabComplete
             arguments = Arrays.copyOfRange(arguments, 1, arguments.length);
 
-            // Get location sender is looking at if they are a Player, matching vanilla behavior
-            // No builtin Commands use the location parameter, but they could
+            //移除了 getTargetBlockExact
+            //改成传 null，不影响大多数 tab 补全
             Location location = null;
-            if (sender instanceof Player) {
-                var player = (Player) sender;
-                Block block = player.getTargetBlockExact(5, FluidCollisionMode.NEVER);
-                if (block != null) {
-                    location = block.getLocation();
-                }
-            }
 
-            // Build suggestions for new argument
             for (var tabCompletion : target.tabComplete(sender, commandLabel, arguments, location)) {
                 builder.suggest(tabCompletion);
             }
+
             return builder.buildFuture();
         });
     }
+
 
     SuggestionsBranch<CommandSender> replacements = SuggestionsBranch.suggest();
 
@@ -194,7 +191,7 @@ public class FakePlayerCommandArgument extends Argument<CommandResult> implement
     @Override
     public <CommandSourceStack> CommandResult parseArgument(CommandContext<CommandSourceStack> cmdCtx, String key, CommandArguments previousArgs) throws CommandSyntaxException {
         var command = cmdCtx.getArgument(key, String.class);
-        var commandMap = CommandAPIBukkit.get().getNMS().getSimpleCommandMap();
+        var commandMap = CommandAPIBukkit.get().getCommandMap();
         var context = new StringReader(command);
 
         var sender = CommandAPIBukkit.<CommandSourceStack>get().getSenderForCommand(cmdCtx, false).getSource();

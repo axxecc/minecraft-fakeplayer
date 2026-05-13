@@ -41,7 +41,6 @@ player-limit: 1
 # Define whether to check if players with the same IP sharing `player-limit`
 detect-ip: true
 
-
 # 假人存活时间, 0 表示永久
 # 单位: 分钟
 # Define the maximum lifespan of fake players
@@ -78,6 +77,12 @@ name-template: ''
 # Prefix will be added to the generated name or specified name
 name-prefix: ''
 
+# 自定义名称假人名称前缀
+# 自动生成的名称或者玩家创建时指定名称都将会追加前缀
+# Name prefix.
+# Prefix will be added to the generated name or specified name
+customization-name-prefix: ''
+
 # 假人自定义名称允许的字符
 #  格式: 正则表达式
 #  默认: '^[a-zA-Z0-9_]+$'
@@ -95,6 +100,13 @@ name-pattern: '^[a-zA-Z0-9_]+$'
 #   obfuscated, bold, strikethrough, underlined, italic
 name-style: gray, italic
 
+# 自定义名称假人在 Tab 上的名称样式
+# Name style on Tab listing
+# Options:
+#   black, dark_blue, dark_green, dark_aqua, dark_red, dark_purple, gold, gray,
+#   dark_gray, blue, green, aqua, red, light_purple, yellow, white
+#   obfuscated, bold, strikethrough, underlined, italic
+customization-name-style: gray, italic
 
 # 防止假人被其他插件踢掉, 这个选项用来兼容一些插件因为某些问题而踢掉假人
 # 可选项:
@@ -115,6 +127,12 @@ prevent-kicking: ON_SPAWNING
 # Define whether fake personas will be removed when the creator quited.
 follow-quiting: true
 
+# 定时跟随下线
+# 假人创建者下线时启用定时跟着下线
+# 如果玩家只是切换服务器, 那么不会触发跟随下线
+# 设置成 0 为关闭 单位 （分钟）
+# follow-quiting 必须为 true
+follow-the-offline-regularly: 0
 
 # 退出时是否丢弃背包物品
 # Define whether fake players will drop items from their inventory when they remove.
@@ -286,8 +304,3 @@ default-features:
   replenish: false
   autofish: false
   wolverine: false
-
-
-# 检测更新
-# 仅仅是检测, 并不会帮你下载
-check-for-updates: true

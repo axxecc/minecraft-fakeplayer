@@ -114,18 +114,18 @@ public class NameManager {
 
     /**
      * 通过自定义名称获取序列名
-     *
      * @param name 自定义名称
      * @return 序列名
      */
     public @NotNull SequenceName getSpecifiedName(@NotNull String name) {
-        if (StringUtils.isNotBlank(config.getNamePrefix())) {
-            name = config.getNamePrefix().trim() + name;
+        if (StringUtils.isNotBlank(config.getCustomizationNamePrefix())) {
+            name = config.getCustomizationNamePrefix().trim() + name;
         }
-        if (name.startsWith("-")) {
+        // 这 "-"
+        if (name.startsWith("_")) {
             throw new IllegalCustomNameException(translatable(
                     "fakeplayer.spawn.error.name.start-with-illegal-character",
-                    text("-", WHITE)
+                    text("", WHITE)
             ).color(RED));
         }
 
@@ -178,7 +178,6 @@ public class NameManager {
 
     /**
      * 获取一个序列名
-     *
      * @param creator 创建者
      * @return 序列名
      */

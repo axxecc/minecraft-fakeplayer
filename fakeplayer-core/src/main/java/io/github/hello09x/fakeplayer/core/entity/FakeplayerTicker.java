@@ -3,11 +3,17 @@ package io.github.hello09x.fakeplayer.core.entity;
 import io.github.hello09x.fakeplayer.api.spi.NMSServerPlayer;
 import io.github.hello09x.fakeplayer.core.Main;
 import io.github.hello09x.fakeplayer.core.manager.FakeplayerManager;
+import io.github.hello09x.fakeplayer.core.manager.action.ActionManager;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
-public class FakeplayerTicker extends BukkitRunnable {
+import java.util.concurrent.TimeUnit;
+
+public class FakeplayerTicker {
+    private final static ActionManager actionManager = Main.getInjector().getInstance(ActionManager.class);
 
     public final static long NON_REMOVE_AT = -1;
 
@@ -34,28 +40,36 @@ public class FakeplayerTicker extends BukkitRunnable {
         this.firstTick = true;
     }
 
-    @Override
+
     public void run() {
-        if (!player.isOnline()) {
-            super.cancel();
-            return;
-        }
+        player.getPlayer().getScheduler().runAtFixedRate(Main.getInstance(), task -> {
+            if (!player.isOnline()) {
+                task.cancel();
+                return;
+            }
 
-        if (this.removeAt != NON_REMOVE_AT && this.player.getTickCount() % 20 == 0 && System.currentTimeMillis() > removeAt) {
-            Main.getInjector().getInstance(FakeplayerManager.class).remove(player.getName(), "lifespan ends");
-            super.cancel();
-            return;
-        }
+            if (this.removeAt != NON_REMOVE_AT && this.player.getTickCount() % 20 == 0 && System.currentTimeMillis() > removeAt) {
+                Main.getInjector().getInstance(FakeplayerManager.class).remove(player.getName(), "lifespan ends");
+                task.cancel();
+                return;
+            }
 
-        // 真实的玩家是通过 ServerGamePacketListenerImpl#tick() 进行时刻运算的
-        // 这个方法会修复第一次 tick 坐标错误的问题
-        // 但是这个方法会导致强制修正坐标为客户端坐标, 然而假人的连接并不会发送任何坐标
-        // 因此这里自行修复第一次 tick 的坐标, 并直接调用 ServerPlayer#doTick() 来进行时刻运算
-        if (this.firstTick) {
-            this.doFirstTick();
-        } else {
-            this.doTick();
-        }
+            // 真实的玩家是通过 ServerGamePacketListenerImpl#tick() 进行时刻运算的
+            // 这个方法会修复第一次 tick 坐标错误的问题
+            // 但是这个方法会导致强制修正坐标为客户端坐标, 然而假人的连接并不会发送任何坐标
+            // 因此这里自行修复第一次 tick 的坐标, 并直接调用 ServerPlayer#doTick() 来进行时刻运算
+            if (this.firstTick) {
+                this.doFirstTick();
+            } else {
+                this.doTick();
+
+                //其他Tick
+
+                actionManager.tick(player.getPlayer());
+
+            }
+        }, null, 1L, 1L);
+
     }
 
     /**
@@ -78,9 +92,10 @@ public class FakeplayerTicker extends BukkitRunnable {
         handle.doTick();
 
         // clearFog 插件会在第一次传送的时候改变了玩家的位置, 因此必须进行一次传送
-        player.teleport(new Location(player.getWorld(), x, y, z, player.getLocation().getYaw(), player.getLocation().getPitch()));
-        handle.absMoveTo(x, y, z, player.getLocation().getYaw(), player.getLocation().getPitch());
-        this.firstTick = false;
+        player.teleportAsync(new Location(player.getWorld(), x, y, z, player.getLocation().getYaw(), player.getLocation().getPitch())).thenRun(() -> {
+            handle.absMoveTo(x, y, z, player.getLocation().getYaw(), player.getLocation().getPitch());
+            this.firstTick = false;
+        });
     }
 
     private void doTick() {
