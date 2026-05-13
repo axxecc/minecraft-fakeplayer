@@ -31,7 +31,6 @@ buildNumber.properties
 .mtj.tmp/
 
 # Package Files #
-*.jar
 *.war
 *.nar
 *.ear
@@ -124,8 +123,11 @@ fabric.properties
 
 *.iml
 .idea/
-server-*/
-server/
+.gradle/
+build/
+*/.gradle/
+*/build/
+*/.idea/
 
 buildtool/
 

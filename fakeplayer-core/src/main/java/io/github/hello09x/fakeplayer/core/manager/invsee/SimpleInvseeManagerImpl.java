@@ -2,8 +2,10 @@ package io.github.hello09x.fakeplayer.core.manager.invsee;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import io.github.hello09x.devtools.core.utils.ComponentUtils;
 import io.github.hello09x.fakeplayer.core.manager.FakeplayerList;
 import io.github.hello09x.fakeplayer.core.manager.FakeplayerManager;
+import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.InventoryView;
 import org.jetbrains.annotations.NotNull;
@@ -25,7 +27,14 @@ public class SimpleInvseeManagerImpl extends AbstractInvseeManager {
 
     @Override
     protected @Nullable InventoryView openInventory(@NotNull Player viewer, @NotNull Player whom) {
-        return viewer.openInventory(whom.getInventory());
+        var view = viewer.openInventory(whom.getInventory());
+        if (view!= null) {
+            view.setTitle(ComponentUtils.toString(Component.translatable(
+                    "fakeplayer.manager.inventory.title",
+                    Component.text(whom.getName())
+            ), viewer.locale()));
+        }
+        return view;
     }
 
 

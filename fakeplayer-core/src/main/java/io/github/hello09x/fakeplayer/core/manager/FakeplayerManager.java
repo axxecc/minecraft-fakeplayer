@@ -18,6 +18,7 @@ import io.github.hello09x.fakeplayer.core.manager.naming.NameManager;
 import io.github.hello09x.fakeplayer.core.repository.model.Feature;
 import io.github.hello09x.fakeplayer.core.util.AddressUtils;
 import io.github.hello09x.fakeplayer.core.util.Commands;
+import lombok.AllArgsConstructor;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -46,7 +47,7 @@ import static net.kyori.adventure.text.format.TextDecoration.ITALIC;
 @Singleton
 public class FakeplayerManager {
 
-    public final static String REMOVAL_REASON_PREFIX = "[fakeplayer] ";
+    public final static String REMOVAL_REASON_PREFIX = "[FakePlayer] ";
 
     private final static Logger log = Main.getInstance().getLogger();
 
@@ -67,14 +68,14 @@ public class FakeplayerManager {
 
         this.lagMonitor = Executors.newSingleThreadScheduledExecutor();
         this.lagMonitor.scheduleWithFixedDelay(() -> {
-                                                   if (Bukkit.getServer().getTPS()[1] < config.getKaleTps()) {
-                                                       Bukkit.getScheduler().runTask(Main.getInstance(), () -> {
-                                                           if (this.removeAll("low tps") > 0) {
-                                                               Bukkit.broadcast(translatable("fakeplayer.manager.remove-all-on-low-tps", GRAY, ITALIC));
-                                                           }
-                                                       });
-                                                   }
-                                               }, 0, 60, TimeUnit.SECONDS
+                    if (Bukkit.getServer().getTPS()[1] < config.getKaleTps()) {
+                        Bukkit.getGlobalRegionScheduler().run(Main.getInstance(), task -> {
+                            if (this.removeAll("low tps") > 0) {
+                                Bukkit.broadcast(translatable("fakeplayer.manager.remove-all-on-low-tps", GRAY, ITALIC));
+                            }
+                        });
+                    }
+                }, 1, 60, TimeUnit.SECONDS
         );
     }
 
@@ -106,6 +107,8 @@ public class FakeplayerManager {
         this.playerList.add(fp);
 
         this.dispatchCommandsEarly(fp, this.config.getPreSpawnCommands());
+
+
         return CompletableFuture
                 .supplyAsync(() -> {
                     var configs = featureManager.getFeatures(creator);
@@ -175,15 +178,15 @@ public class FakeplayerManager {
      */
     public @Nullable CommandSender getCreator(@NotNull Player target) {
         return Optional.ofNullable(this.playerList.getByUUID(target.getUniqueId()))
-                       .map(Fakeplayer::getCreator)
-                       .map(creator -> {
-                           if (creator instanceof Player p) {
-                               return Bukkit.getPlayer(p.getUniqueId());
-                           } else {
-                               return creator;
-                           }
-                       })
-                       .orElse(null);
+                .map(Fakeplayer::getCreator)
+                .map(creator -> {
+                    if (creator instanceof Player p) {
+                        return Bukkit.getPlayer(p.getUniqueId());
+                    } else {
+                        return creator;
+                    }
+                })
+                .orElse(null);
     }
 
     /**
@@ -409,11 +412,13 @@ public class FakeplayerManager {
         var u = target.getUniqueId().toString();
         var c = Objects.requireNonNull(this.getCreatorName(target));
         for (var cmd : Commands.formatCommands(commands, "%p", p, "%u", u, "%c", c)) {
-            if (!target.performCommand(cmd)) {
-                log.warning(target.getName() + " failed to execute command: " + cmd);
-            } else {
-                log.info(target.getName() + " issued command: " + cmd);
-            }
+            target.getScheduler().run(Main.getInstance(), task -> {
+                if (!target.performCommand(cmd)) {
+                    log.warning(target.getName() + " failed to execute command: " + cmd);
+                } else {
+                    log.info(target.getName() + " issued command: " + cmd);
+                }
+            }, null);
         }
     }
 
@@ -422,17 +427,47 @@ public class FakeplayerManager {
             return;
         }
 
-        var server = Bukkit.getServer();
-        var sender = Bukkit.getConsoleSender();
         var p = fp.getName();
         var u = fp.getUUID().toString();
         var c = fp.getCreator().getName();
         for (var cmd : Commands.formatCommands(commands, "%p", p, "%u", u, "%c", c)) {
-            if (!server.dispatchCommand(sender, cmd)) {
-                log.warning("Failed to execute command for %s: ".formatted(p) + cmd);
-            } else {
-                log.info("Dispatched command: " + cmd);
-            }
+            Bukkit.getGlobalRegionScheduler().run(Main.getInstance(), task -> {
+                var server = Bukkit.getServer();
+                var sender = Bukkit.getConsoleSender();
+                if (!server.dispatchCommand(sender, cmd)) {
+                    log.warning("Failed to execute command for %s: ".formatted(p) + cmd);
+                } else {
+                    log.info("Dispatched command: " + cmd);
+                }
+            });
+        }
+    }
+
+    /**
+     * 以控制台身份对玩家执行命令
+     *
+     * @param args     参数
+     * @param commands 命令
+     */
+    public void dispatchCommands(@NotNull DispatchCommandArgs args, @NotNull List<String> commands) {
+        if (commands.isEmpty()) {
+            return;
+        }
+
+
+        var p = args.fakeplayerName;
+        var u = args.fakeplayerUUID;
+        var c = args.creatorName;
+        for (var cmd : Commands.formatCommands(commands, "%p", p, "%u", u, "%c", c)) {
+            Bukkit.getGlobalRegionScheduler().run(Main.getInstance(), task -> {
+                var server = Bukkit.getServer();
+                var sender = Bukkit.getConsoleSender();
+                if (!server.dispatchCommand(sender, cmd)) {
+                    log.warning("Failed to execute command for %s: ".formatted(p) + cmd);
+                } else {
+                    log.info("Dispatched command: " + cmd);
+                }
+            });
         }
     }
 
@@ -443,23 +478,7 @@ public class FakeplayerManager {
      * @param commands 命令
      */
     public void dispatchCommands(@NotNull Player player, @NotNull List<String> commands) {
-        if (commands.isEmpty()) {
-            return;
-        }
-
-        var server = Bukkit.getServer();
-        var sender = Bukkit.getConsoleSender();
-
-        var p = player.getName();
-        var u = player.getUniqueId().toString();
-        var c = Objects.requireNonNull(this.getCreatorName(player));
-        for (var cmd : Commands.formatCommands(commands, "%p", p, "%u", u, "%c", c)) {
-            if (!server.dispatchCommand(sender, cmd)) {
-                log.warning("Failed to execute command for %s: ".formatted(p) + cmd);
-            } else {
-                log.info("Dispatched command: " + cmd);
-            }
-        }
+        this.dispatchCommands(new DispatchCommandArgs(player.getName(), player.getUniqueId().toString(), Objects.requireNonNull(this.getCreatorName(player))), commands);
     }
 
     /**
@@ -486,8 +505,13 @@ public class FakeplayerManager {
     }
 
     public void onDisable() {
-        Exceptions.suppress(Main.getInstance(), () -> this.removeAll("Plugin disabled"));
+        // Exceptions.suppress(Main.getInstance(), () -> this.removeAll("Plugin disabled"));
         Exceptions.suppress(Main.getInstance(), this.lagMonitor::shutdownNow);
+    }
+
+    @AllArgsConstructor
+    public static class DispatchCommandArgs {
+        public String fakeplayerName, fakeplayerUUID, creatorName;
     }
 
 }

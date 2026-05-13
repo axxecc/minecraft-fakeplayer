@@ -5,12 +5,14 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import io.github.hello09x.fakeplayer.core.Main;
 import io.github.hello09x.fakeplayer.core.config.FakeplayerConfig;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -19,11 +21,7 @@ import java.util.stream.Collectors;
 public class WildFakeplayerManager implements PluginMessageListener {
 
     private final static Logger log = Main.getInstance().getLogger();
-    private final static boolean IS_BUNGEECORD = Bukkit
-            .getServer()
-            .spigot()
-            .getSpigotConfig()
-            .getBoolean("settings.bungeecord", false);
+    private final static boolean IS_BUNGEECORD = Bukkit.getServerConfig().isProxyEnabled();
     private final static String CHANNEL = "BungeeCord";
     private final static String SUB_CHANNEL = "PlayerList";
 
@@ -33,17 +31,20 @@ public class WildFakeplayerManager implements PluginMessageListener {
      * 仅在 {@link #IS_BUNGEECORD} 为 {@code true} 时生效
      */
     private final static int CLEANUP_THRESHOLD = 2;
-    private final static int CLEANUP_PERIOD = 6000;
+    private final static int CLEANUP_PERIOD = 120;
 
     private final FakeplayerManager manager;
     private final FakeplayerConfig config;
+    private final int delay;
     private final Map<String, AtomicInteger> offline = new HashMap<>();
+    private Map<String, ScheduledTask> removeTask = new HashMap<>();
 
     @Inject
     public WildFakeplayerManager(FakeplayerManager manager, FakeplayerConfig config) {
         this.manager = manager;
         this.config = config;
-        Bukkit.getScheduler().runTaskTimer(Main.getInstance(), this::cleanup, 0, CLEANUP_PERIOD);
+        this.delay = config.getFollowtheofflineregularly();
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(Main.getInstance(), task -> cleanup(), 1, CLEANUP_PERIOD);
     }
 
     @Override
@@ -80,8 +81,8 @@ public class WildFakeplayerManager implements PluginMessageListener {
     public void cleanup0(@NotNull Set<String> online) {
         @SuppressWarnings("all")
         var group = manager.getAll()
-                           .stream()
-                           .collect(Collectors.groupingBy(manager::getCreatorName));
+                .stream()
+                .collect(Collectors.groupingBy(manager::getCreatorName));
 
         for (var entry : group.entrySet()) {
             var creator = entry.getKey();
@@ -91,6 +92,12 @@ public class WildFakeplayerManager implements PluginMessageListener {
 
             var targets = entry.getValue();
             if (targets.isEmpty() || online.contains(creator)) {
+
+                //如果玩家在线那就尝试取消任务，删除数据
+                if (removeTask.get(creator) != null){
+                    removeTask.get(creator).cancel();
+                    removeTask.remove(creator);
+                }
                 continue;
             }
 
@@ -98,18 +105,39 @@ public class WildFakeplayerManager implements PluginMessageListener {
                 continue;
             }
 
-            for (var target : targets) {
-                manager.remove(target.getName(), "Creator offline");
+            if (delay <= 0) {
+                for (var target : targets) {
+                    manager.remove(target.getName(), "Creator offline");
+                    log.info("%s is offline more than %d ticks, removing %d fake players".formatted(
+                            creator,
+                            CLEANUP_PERIOD * CLEANUP_THRESHOLD,
+                            targets.size())
+                    );
+                }
+
+            }else {
+                if (removeTask.containsKey(creator)){
+                    return;
+                }
+                removeTask.put(creator, Bukkit.getAsyncScheduler().runDelayed(Main.getInstance(), task -> {
+                    if (Bukkit.getPlayerExact(creator) == null) {
+                        for (Player target : targets) {
+                            Bukkit.getGlobalRegionScheduler().run(Main.getInstance(), t -> manager.remove(target.getName(), "Creator offline"));
+                        }
+                        log.info("%s 离线时间超过 %d 分钟，删除了 %d 假玩家".formatted(
+                                creator,
+                                delay,
+                                targets.size())
+                        );
+                    }
+                    removeTask.remove(creator);
+                }, delay, TimeUnit.MINUTES));
             }
-            log.info("%s is offline more than %d ticks, removing %d fake players".formatted(
-                    creator,
-                    CLEANUP_PERIOD * CLEANUP_THRESHOLD,
-                    targets.size())
-            );
+
         }
 
-        for (var player : online) {
-            offline.remove(player);
+        for (var p : online) {
+            offline.remove(p);
         }
     }
 

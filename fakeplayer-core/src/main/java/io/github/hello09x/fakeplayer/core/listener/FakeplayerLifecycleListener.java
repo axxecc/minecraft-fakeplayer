@@ -5,13 +5,24 @@ import com.google.inject.Singleton;
 import io.github.hello09x.fakeplayer.core.Main;
 import io.github.hello09x.fakeplayer.core.config.FakeplayerConfig;
 import io.github.hello09x.fakeplayer.core.manager.FakeplayerManager;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.TicketType;
+import net.minecraft.world.level.ChunkPos;
 import org.bukkit.Bukkit;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.jetbrains.annotations.NotNull;
+
+import java.awt.*;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author tanyaofei
@@ -22,6 +33,9 @@ public class FakeplayerLifecycleListener implements Listener {
 
     private final FakeplayerManager manager;
     private final FakeplayerConfig config;
+
+    //K:假人UUID V:创建者名称
+    private final Map<UUID, String> pendingFakeQuits = new ConcurrentHashMap<>();
 
     @Inject
     public FakeplayerLifecycleListener(FakeplayerManager manager, FakeplayerConfig config) {
@@ -48,7 +62,7 @@ public class FakeplayerLifecycleListener implements Listener {
             return;
         }
 
-        Bukkit.getScheduler().runTaskLater(Main.getInstance(), () -> {
+        Bukkit.getRegionScheduler().runDelayed(Main.getInstance(), player.getLocation(), task -> {
             if (player.isOnline()) {
                 manager.dispatchCommands(player, config.getAfterSpawnCommands());
                 manager.issueCommands(player, config.getSelfCommands());
@@ -65,21 +79,43 @@ public class FakeplayerLifecycleListener implements Listener {
             return;
         }
 
+        pendingFakeQuits.put(player.getUniqueId(), this.manager.getCreatorName(player));
         manager.dispatchCommands(player, config.getPostQuitCommands());
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onAfterQuit(@NotNull PlayerQuitEvent event) {
         var player = event.getPlayer();
-        if (this.manager.isNotFake(player)) {
-            // Not a fake player
-            return;
-        }
-
-        Bukkit.getScheduler().runTaskLater(Main.getInstance(), () -> {
-            manager.dispatchCommands(player, config.getAfterQuitCommands());
-        }, 20);
+        var uuid = player.getUniqueId();
+        if (!pendingFakeQuits.containsKey(uuid)) return;
+        Bukkit.getGlobalRegionScheduler().runDelayed(Main.getInstance(), task -> {
+            try {
+                manager.dispatchCommands(new FakeplayerManager.DispatchCommandArgs(player.getName(),uuid.toString(),pendingFakeQuits.get(uuid)), config.getAfterQuitCommands());
+            } finally {
+                pendingFakeQuits.remove(uuid);
+            }
+        }, 1);
     }
 
+    private void clearTickets(Player player) {
+        ServerPlayer handle1 = ((CraftPlayer) player).getHandle();
+        ServerLevel level = handle1.level();
+        ChunkPos pos = handle1.chunkPosition();
+
+        int viewDistance = Bukkit.getViewDistance();
+        int simulationDistance = Bukkit.getSimulationDistance();
+
+        level.getChunkSource().removeTicketWithRadius(
+                TicketType.PLAYER_LOADING,
+                pos,
+                viewDistance
+        );
+        level.getChunkSource().removeTicketWithRadius(
+                TicketType.PLAYER_SIMULATION,
+                pos,
+                simulationDistance
+        );
+
+    }
 
 }

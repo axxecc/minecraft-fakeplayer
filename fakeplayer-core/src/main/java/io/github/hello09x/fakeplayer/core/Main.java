@@ -2,6 +2,8 @@ package io.github.hello09x.fakeplayer.core;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import dev.jorel.commandapi.CommandAPI;
+import dev.jorel.commandapi.CommandAPIPaperConfig;
 import io.github.hello09x.devtools.command.CommandModule;
 import io.github.hello09x.devtools.core.TranslationModule;
 import io.github.hello09x.devtools.core.translation.TranslationConfig;
@@ -9,7 +11,6 @@ import io.github.hello09x.devtools.core.translation.TranslatorUtils;
 import io.github.hello09x.devtools.core.utils.Exceptions;
 import io.github.hello09x.devtools.database.DatabaseModule;
 import io.github.hello09x.fakeplayer.core.command.CommandRegistry;
-import io.github.hello09x.fakeplayer.core.config.FakeplayerConfig;
 import io.github.hello09x.fakeplayer.core.listener.FakeplayerLifecycleListener;
 import io.github.hello09x.fakeplayer.core.listener.FakeplayerListener;
 import io.github.hello09x.fakeplayer.core.listener.PlayerListener;
@@ -18,12 +19,9 @@ import io.github.hello09x.fakeplayer.core.manager.FakeplayerReplenishManager;
 import io.github.hello09x.fakeplayer.core.manager.WildFakeplayerManager;
 import io.github.hello09x.fakeplayer.core.manager.invsee.InvseeManager;
 import io.github.hello09x.fakeplayer.core.placeholder.FakeplayerPlaceholderExpansion;
-import io.github.hello09x.fakeplayer.core.util.update.UpdateChecker;
 import lombok.Getter;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.concurrent.CompletableFuture;
 
 public final class Main extends JavaPlugin {
 
@@ -38,10 +36,20 @@ public final class Main extends JavaPlugin {
     public void onLoad() {
         loadAt = System.currentTimeMillis();
         instance = this;
+
+        CommandAPI.onLoad(new CommandAPIPaperConfig(this)
+                .verboseOutput(false) // 使用详细输出加载
+                .silentLogs(true) // 禁用所有日志记录（错误除外）
+                .fallbackToLatestNMS(true) // 如果找不到当前版本的实现，CommandAPI 是否应该退回到最新的 NMS 版本
+                .missingExecutorImplementationMessage("This command has no implementations for %s") // 设置在缺少执行器实现时显示的消息
+                .instance()
+        );
     }
 
     @Override
     public void onEnable() {
+        CommandAPI.onEnable();
+
         injector = Guice.createInjector(
                 new FakeplayerModule(),
                 new CommandModule(),
@@ -58,6 +66,7 @@ public final class Main extends JavaPlugin {
             messenger.registerOutgoingPluginChannel(this, "BungeeCord");
         }
 
+
         {
             var manager = getServer().getPluginManager();
             manager.registerEvents(injector.getInstance(PlayerListener.class), this);
@@ -67,6 +76,7 @@ public final class Main extends JavaPlugin {
             manager.registerEvents(injector.getInstance(FakeplayerReplenishManager.class), this);
             manager.registerEvents(injector.getInstance(InvseeManager.class), this);
         }
+
 
         {
             var placeholderExpansion = injector.getInstance(FakeplayerPlaceholderExpansion.class);
@@ -78,40 +88,7 @@ public final class Main extends JavaPlugin {
             }
         }
 
-        if (injector.getInstance(FakeplayerConfig.class).isCheckForUpdates()) {
-            checkForUpdatesAsync();
-        }
-
         getLogger().info("Enabled in %d ms".formatted(System.currentTimeMillis() - loadAt));
-    }
-
-    public void checkForUpdatesAsync() {
-        CompletableFuture.runAsync(() -> {
-            var meta = this.getPluginMeta();
-            var checker = new UpdateChecker("tanyaofei", "minecraft-fakeplayer");
-            try {
-                var release = checker.getLastRelease();
-
-                var current = meta.getVersion();
-                var other = release.getTagName();
-                if (other.charAt(0) == 'v') {
-                    other = other.substring(1);
-                }
-
-                if (UpdateChecker.isNew(current, other)) {
-                    var log = getLogger();
-                    log.info("New version: " + release.getTagName());
-                    log.info("Address: " + meta.getWebsite());
-                    log.info("Update Log");
-                    for (var line : release.getBody().split("\n")) {
-                        log.info("\t" + line);
-                    }
-                }
-
-            } catch (Throwable e) {
-                getLogger().warning("Error on checking for updates: " + e.getMessage());
-            }
-        });
     }
 
     @Override
@@ -123,6 +100,7 @@ public final class Main extends JavaPlugin {
                 messenger.unregisterOutgoingPluginChannel(this);
             });
         }
+        CommandAPI.onDisable();
     }
 
     public static @NotNull Injector getInjector() {

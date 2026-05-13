@@ -57,9 +57,19 @@ public class FakeplayerConfig extends PluginConfig {
     private String namePrefix;
 
     /**
+     * 自定义名称假人名称前缀
+     */
+    private String customizationNamePrefix;
+
+    /**
      * 名称样式, 颜色
      */
     private NamedTextColor nameStyleColor;
+
+    /**
+     * 自定义名称样式, 颜色
+     */
+    private NamedTextColor customizationNameStyleColor;
 
     /**
      * 名称样式, 格式
@@ -67,9 +77,19 @@ public class FakeplayerConfig extends PluginConfig {
     private List<TextDecoration> nameStyleDecorations;
 
     /**
+     * 自定义假人名称的名称样式, 格式
+     */
+    private List<TextDecoration> customizationNameStyleDecorations;
+
+    /**
      * 创建者玩家下线时是否跟随下线
      */
     private boolean followQuiting;
+
+    /**
+     * 创建者玩家下线时是否定时跟随下线
+     */
+    private int followtheofflineregularly;
 
     /**
      * 是否探测 IP
@@ -182,6 +202,8 @@ public class FakeplayerConfig extends PluginConfig {
 
     @Override
     protected void reload(@NotNull FileConfiguration file) {
+        this.followtheofflineregularly = file.getInt("follow-the-offline-regularly", 0);
+
         this.playerLimit = maxIfZero(file.getInt("player-limit", 1));
         this.serverLimit = maxIfZero(file.getInt("server-limit", 1000));
         this.followQuiting = file.getBoolean("follow-quiting", true);
@@ -202,6 +224,7 @@ public class FakeplayerConfig extends PluginConfig {
         this.preventKicking = this.getPreventKicking(file);
         this.nameTemplate = getNameTemplate(file);
         this.namePrefix = file.getString("name-prefix", "");
+        this.customizationNamePrefix = file.getString("customization-name-prefix", "");
         this.lifespan = getLifespan(file);
         this.allowCommands = file.getStringList("allow-commands")
                                  .stream()
@@ -209,13 +232,15 @@ public class FakeplayerConfig extends PluginConfig {
                                  .filter(c -> !c.isBlank())
                                  .collect(Collectors.toSet());
 
-        this.defaultOnlineSkin = file.getBoolean("default-online-skin", false);
+        this.defaultOnlineSkin = file.getBoolean("default-online-skin", true);
         this.defaultFeatures = Arrays.stream(Feature.values())
                                      .collect(Collectors.toMap(Function.identity(), key -> file.getString("default-features." + key.name(), key.getDefaultOption())));
         this.invseeImplement = ConfigUtils.getEnum(file, "invsee-implement", InvseeImplement.class, InvseeImplement.AUTO);
         this.debug = file.getBoolean("debug", false);
         this.nameStyleColor = this.getNameStyleColor(file);
+        this.customizationNameStyleColor = this.getCustomizationNameStyleColor(file);
         this.nameStyleDecorations = this.getNameStyleDecorations(file);
+        this.customizationNameStyleDecorations = this.getcustomizationNameStyleDecorations(file);
 
         if (this.isConfigFileOutOfDate()) {
             Bukkit.getScheduler().runTaskLater(Main.getInstance(), () -> {
@@ -263,7 +288,8 @@ public class FakeplayerConfig extends PluginConfig {
 
     private @NotNull String getNameTemplate(@NotNull FileConfiguration file) {
         var tmpl = file.getString("name-template", "");
-        if (tmpl.startsWith("-") || tmpl.startsWith("@")) {
+        // 这 "-"
+        if (tmpl.startsWith("_") || tmpl.startsWith("@")) {
             log.warning("Invalid name template: " + this.nameTemplate);
             return "";
         }
@@ -291,8 +317,32 @@ public class FakeplayerConfig extends PluginConfig {
         return color;
     }
 
+    private @NotNull NamedTextColor getCustomizationNameStyleColor(@NotNull FileConfiguration file) {
+        var styles = Objects.requireNonNullElse(file.getString("customization-name-style"), "").split(",\\s*");
+        var color = NamedTextColor.WHITE;
+        for (var style : styles) {
+            var c = NamedTextColor.NAMES.value(style);
+            if (c != null) {
+                color = c;
+            }
+        }
+        return color;
+    }
+
     private @NotNull List<TextDecoration> getNameStyleDecorations(@NotNull FileConfiguration file) {
         var styles = Objects.requireNonNullElse(file.getString("name-style"), "").split(",\\s*");
+        var decorations = new ArrayList<TextDecoration>();
+        for (var style : styles) {
+            var decoration = TextDecoration.NAMES.value(style);
+            if (decoration != null) {
+                decorations.add(decoration);
+            }
+        }
+        return decorations;
+    }
+
+    private @NotNull List<TextDecoration> getcustomizationNameStyleDecorations(@NotNull FileConfiguration file) {
+        var styles = Objects.requireNonNullElse(file.getString("customization-name-style"), "").split(",\\s*");
         var decorations = new ArrayList<TextDecoration>();
         for (var style : styles) {
             var decoration = TextDecoration.NAMES.value(style);
